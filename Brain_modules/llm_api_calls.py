@@ -38,7 +38,6 @@ class LLM_API_Calls:
         self.available_functions = {
             "run_local_command": self.run_local_command,
             "web_research": self.web_research_tool.web_research,
-
             "analyze_image": self.analyze_image,
             "call_expert": call_expert
         }
@@ -55,7 +54,7 @@ class LLM_API_Calls:
     def choose_API_provider(self):
         if self.current_api_provider == "OpenAI":
             api_key = os.environ.get("OPENAI_API_KEY") or input("Enter your OpenAI API key: ").strip()
-            self.model = os.environ.get("OPENAI_MODEL", "gpt-4")
+            self.model = os.environ.get("OPENAI_MODEL", "gpt-4o")
             return OpenAI(api_key=api_key)
         elif self.current_api_provider == "ollama":
             self.model = os.environ.get("OLLAMA_MODEL", "llama3:instruct")
@@ -78,7 +77,7 @@ class LLM_API_Calls:
         tokens = self.encoding.encode(str(text))
         return self.encoding.decode(tokens[:max_tokens]) if len(tokens) > max_tokens else text
 
-    @retry(wait=wait_random_exponential(multiplier=1, max=40), stop=stop_after_attempt(MAX_RETRIES))
+    @retry(wait=wait_random_exponential(multiplier=1, max=90), stop=stop_after_attempt(MAX_RETRIES))
     def run_local_command(self, command, progress_callback=None):
         if progress_callback:
             progress_callback(f"Executing local command: {command}")
@@ -127,8 +126,8 @@ class LLM_API_Calls:
 
     def _chat_loop(self, prompt: str, system_message: str, tools: List[dict], progress_callback=None) -> Tuple[str, List[Any]]:
         messages = [{"role": "system", "content": system_message}]
-        messages.extend(self.chat_history[-5:])
-        messages.append({"role": "user", "content": prompt})
+        messages.extend(self.chat_history[-3:])
+        messages.append({"role": "user", "content": prompt if len(prompt) < 1000 else prompt[:1000] + "trunicated remaining..."})
 
         while True:
             response = self._chat_with_retry(messages, tools, progress_callback)
@@ -200,8 +199,10 @@ class LLM_API_Calls:
 
     def _generate_reflection_prompt(self, initial_prompt, initial_response, tool_responses):
         tool_results = "\n".join([f"{resp['tool_name']}: {json.dumps(resp['tool_response'])}" for resp in tool_responses])
+        #cut off the reflection prompt if it exceeds the max token limit
         reflection_prompt = f"""
         Initial user input: {initial_prompt}
+       
         Your initial response: {initial_response}
         Tool usage results: {tool_results}
         
@@ -213,6 +214,7 @@ class LLM_API_Calls:
 
         Your reflection and response:
         """
+        reflection_prompt = self.truncate_text(reflection_prompt, self.max_tokens)
         return reflection_prompt
 
     def update_token_usage(self, messages, response):
