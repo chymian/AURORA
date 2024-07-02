@@ -4,8 +4,53 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AURORA: AI Assistant</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='customization.css') }}">
+    <link rel="stylesheet" href="static/customization.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <style>
+        /* New styles for API key inputs */
+        .api-key-section {
+            margin-top: 1rem;
+            padding: 1rem;
+            background-color: var(--accent-color);
+            border-radius: 10px;
+            box-shadow: 0 2px 4px var(--shadow-color);
+        }
+        .api-key-section h3 {
+            margin-bottom: 0.5rem;
+            color: var(--aurora-color);
+        }
+        .api-key-input {
+            margin-bottom: 0.5rem;
+        }
+        .api-key-input label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-size: var(--font-size-smaller);
+        }
+        .api-key-input input {
+            width: calc(100% - 70px);
+            padding: 0.5rem;
+            border: none;
+            border-radius: 5px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-size: var(--font-size-smaller);
+        }
+        .save-key-btn {
+            margin-left: 5px;
+            padding: 0.25rem 0.5rem;
+            font-size: var(--font-size-smaller);
+            background-color: var(--aurora-color);
+            color: var(--bg-color);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .save-key-btn:hover {
+            background-color: var(--highlight-color);
+            color: var(--text-color);
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -17,29 +62,16 @@
                 <button id="clear-button" title="Clear Chat"><i class="fas fa-trash"></i></button>
                 <button id="tts-toggle" title="Toggle Text-to-Speech"><i class="fas fa-volume-up"></i></button>
                 <button id="record-button" title="Voice Input"><i class="fas fa-microphone"></i></button>
-                <select id="api-provider" title="Select API Provider" onchange="setModel(event)">
-                    <option value="Groq"selected>Groq</option>
+                <select id="api-provider" title="Select API Provider">
+                    <option value="Groq" selected>Groq</option>
                     <option value="OpenAI">OpenAI</option>
-                    <option value="ollama">Ollama</option> # it defaults to ollama on backend.
+                    <option value="ollama">Ollama</option>
                 </select>
-                
-                <script>
-                    document.addEventListener('DOMContentLoaded', function () {
-                        setModel({ target: document.getElementById('api-provider') });
-                    });
-
-                    function setModel(event) {
-                        const selectedProvider = event.target.value;
-                        // Implement the logic to set the model based on the selected provider
-                        console.log('Model set to:', selectedProvider);
-
-                    }
-                </script>
             </div>
         </div>
         <div class="info-panel">
             <div class="info-panel-content">
-                <img id="logo" src="{{ url_for('static', filename='aurora.png') }}" alt="Aurora Logo">
+                <img id="logo" src="static/aurora.png" alt="Aurora Logo">
                 <div id="brain-visualization">
                     <svg viewBox="0 0 100 60" preserveAspectRatio="xMidYMid meet">
                         <defs>
@@ -72,13 +104,73 @@
                 </div>
                 <div id="status-label">Ready</div>
                 <div id="artifact-display"></div>
+                
+                <!-- New API Key Input Section -->
+                <div class="api-key-section">
+                    <h3>API Keys</h3>
+                    <div class="api-key-input">
+                        <label for="groq-api-key">Groq API Key:</label>
+                        <input type="password" id="groq-api-key" placeholder="Enter Groq API Key">
+                        <button id="save-groq-key" class="save-key-btn">Save</button>
+                    </div>
+                    <div class="api-key-input">
+                        <label for="openai-api-key">OpenAI API Key:</label>
+                        <input type="password" id="openai-api-key" placeholder="Enter OpenAI API Key">
+                        <button id="save-openai-key" class="save-key-btn">Save</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
     <button id="theme-toggle" title="Toggle Theme"><i class="fas fa-adjust"></i></button>
     <button id="info-toggle" class="info-toggle" title="Toggle Info Panel"><i class="fas fa-info-circle"></i></button>
 
-    <script src="{{ url_for('static', filename='customization.js') }}"></script>
+    <script src="static/customization.js"></script>
     <audio id="audio-player" controls style="display:none;"></audio>
+    
+    <script>
+        // Add event listeners for saving API keys
+        document.getElementById('save-groq-key').addEventListener('click', function() {
+            saveApiKey('GROQ_API_KEY', document.getElementById('groq-api-key').value);
+        });
+        
+        document.getElementById('save-openai-key').addEventListener('click', function() {
+            saveApiKey('OPENAI_API_KEY', document.getElementById('openai-api-key').value);
+        });
+
+        function saveApiKey(variable, value) {
+            if (value.trim() === '') {
+                updateStatus(`Please enter a valid ${variable} value`);
+                return;
+            }
+
+            fetch('/set_env', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ variable, value })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    updateStatus(`${variable} saved successfully`);
+                    document.getElementById(`${variable.toLowerCase().replace('_api_key', '')}-api-key`).value = '';
+                } else {
+                    throw new Error(data.message);
+                }
+            })
+            .catch(error => {
+                console.error(`Error saving ${variable}:`, error);
+                updateStatus(`Error saving ${variable}`);
+            });
+        }
+
+        function updateStatus(message) {
+            const statusLabel = document.getElementById('status-label');
+            statusLabel.textContent = message;
+            setTimeout(() => {
+                statusLabel.textContent = 'Ready';
+            }, 3000);
+        }
+    </script>
 </body>
 </html>

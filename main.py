@@ -1,7 +1,5 @@
 import os
-
 import time
-
 import logging
 from flask import Flask, render_template, request, jsonify, g, send_file, Response
 from Brain_modules.brain import Brain
@@ -10,7 +8,6 @@ from speaker import text_to_speech
 from queue import Queue
 import json
 from Brain_modules.llm_api_calls import llm_api_calls, tools
-
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -172,8 +169,8 @@ def set_env():
     value = data.get('value')
     if variable and value:
         os.environ[variable] = value
-        return jsonify({'status': 'success'})
-    return jsonify({'status': 'error'}), 400
+        return jsonify({'status': 'success', 'message': f'{variable} has been set'})
+    return jsonify({'status': 'error', 'message': 'Invalid request. Both variable and value are required.'}), 400
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, threaded=True, debug=False, use_reloader=False)
