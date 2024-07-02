@@ -17,3 +17,7 @@ textblob
 Pillow
 tensorflow
 chromadb
+sounddevice
+soundfile
+deepgram-sdk
+
