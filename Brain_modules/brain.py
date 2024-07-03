@@ -66,18 +66,7 @@ class Brain:
             self.progress_callback(error_message)
             return f"An unexpected error occurred while processing your request. Please try again or rephrase your input."
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, max=10), retry=retry_if_exception_type(Exception))
-    def _capture_and_analyze_screenshot(self):
-        try:
-            screenshot = pyautogui.screenshot()
-            screenshot_path = os.path.abspath("temp_screenshot.png")
-            screenshot.save(screenshot_path)
-            image_description = self.image_vision.analyze_local_image(screenshot_path)
-            os.remove(screenshot_path)
-            return image_description
-        except Exception as e:
-            self.progress_callback(f"Error capturing or analyzing screenshot: {str(e)}")
-            return "Unable to capture or analyze screenshot. Continuing without visual context."
+
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, max=10), retry=retry_if_exception_type(Exception))
     def _get_initial_response(self, combined_input: str) -> str:
@@ -111,9 +100,9 @@ class Brain:
                 tool_responses[function_name] = function_response
         return tool_responses
 
-    def _process_lobes(self, user_input: str, initial_response: str, screenshot_description: str) -> Dict[str, Any]:
+    def _process_lobes(self, user_input: str, initial_response: str) -> Dict[str, Any]:
         self.progress_callback("Processing lobes...")
-        combined_input = f"{user_input}\n{initial_response}\nContext from screenshot: {screenshot_description}"
+        combined_input = f"{user_input}\n{initial_response}\n"
         
         # Process all lobes
         comprehensive_thought = self.lobes_processing.process_all_lobes(combined_input)
@@ -122,9 +111,9 @@ class Brain:
         return comprehensive_thought
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, max=10), retry=retry_if_exception_type(Exception))
-    def _integrate_memory(self, user_input: str, initial_response: str, lobe_responses: Dict[str, Any], screenshot_description: str) -> str:
+    def _integrate_memory(self, user_input: str, initial_response: str, lobe_responses: Dict[str, Any]) -> str:
         self.progress_callback("Integrating memory and context...")
-        combined_input = f"{user_input}\n{initial_response}\n{json.dumps(lobe_responses)}\nContext from screenshot: {screenshot_description}"
+        combined_input = f"{user_input}\n{initial_response}\n{json.dumps(lobe_responses)}\n"
         embedding = generate_embedding(combined_input, self.embeddings_model, self.collection, self.collection_size)
         add_to_memory(combined_input, self.embeddings_model, self.collection, self.collection_size)
         relevant_memory = retrieve_relevant_memory(embedding, self.collection)
@@ -134,10 +123,10 @@ class Brain:
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, max=10), retry=retry_if_exception_type(Exception))
     def _generate_final_response(self, user_input: str, initial_response: str, 
                                  lobe_responses: Dict[str, Any], memory_context: str, 
-                                 sentiment: Dict[str, float], screenshot_description: str) -> str:
+                                 sentiment: Dict[str, float]) -> str:
         self.progress_callback("Generating final response...")
         context = self._construct_final_prompt(user_input, initial_response, lobe_responses, 
-                                               memory_context, sentiment, screenshot_description)
+                                               memory_context, sentiment)
         system_message = self._construct_system_message()
         final_response, _ = llm_api_calls.chat(context, system_message, tools, 
                                                progress_callback=self.progress_callback)
@@ -169,7 +158,7 @@ class Brain:
            b. Ask clarifying questions if necessary.
            c. Provide initial thoughts or a high-level approach to addressing the request.
         4. Consider if any tools could be helpful in responding to the input.
-        5. If no tool is needed or if it's just a normal conversation, use the 'do_nothing' tool.
+        5. If no tool is needed or if it's just a normal conversation reply normally.
 
         Remember to be friendly, informative, and engaging in your response. Use your vast knowledge base to provide accurate and helpful information.
 
@@ -181,7 +170,7 @@ class Brain:
 
     def _construct_final_prompt(self, user_input: str, initial_response: str, 
                                 lobe_responses: Dict[str, Any], memory_context: str, 
-                                sentiment: Dict[str, float], screenshot_description: str) -> str:
+                                sentiment: Dict[str, float]) -> str:
         return f"""As AURORA, an advanced AI with multi-faceted cognitive capabilities, synthesize the following information to formulate a comprehensive response:
 
                 User Input: "{user_input}"
@@ -195,7 +184,7 @@ class Brain:
 
                 Detected Sentiment: Polarity: {sentiment['polarity']}, Subjectivity: {sentiment['subjectivity']}
 
-                Visual Context: {screenshot_description}
+
 
                 Based on this information, generate a response that addresses the user's input comprehensively. Your response should:
 
@@ -206,8 +195,8 @@ class Brain:
                    - The overall thought process
                 3. Utilize any pertinent information from the memory context
                 4. Adjust your tone based on the detected sentiment
-                5. Consider the visual context provided by the screenshot description
-                6. If necessary, suggest or initiate the use of additional tools or processes to better assist the user
+
+                5. If necessary, suggest or initiate the use of additional tools or processes to better assist the user
 
                 Remember to maintain a coherent narrative throughout your response, ensuring that all parts contribute to a unified and helpful answer. If you need to use any tools or perform additional actions, incorporate them naturally into your response.
 
