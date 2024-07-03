@@ -61,7 +61,7 @@ class LLM_API_Calls:
             return OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
         elif self.current_api_provider == "Groq":
             api_key = os.environ.get("GROQ_API_KEY") or input("Enter your Groq API key: ").strip()
-            self.model = os.environ.get("GROQ_MODEL", "llama3-70b-8192")
+            self.model = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
             return OpenAI(base_url="https://api.groq.com/openai/v1", api_key=api_key)
         else:
             raise ValueError("Unsupported LLM Provider")

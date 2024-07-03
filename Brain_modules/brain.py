@@ -1,16 +1,13 @@
 import json
 import time
-import os
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from Brain_modules.llm_api_calls import llm_api_calls, tools
 from Brain_modules.memory_utils import generate_embedding, add_to_memory, retrieve_relevant_memory
 from Brain_modules.sentiment_analysis import analyze_sentiment
-
 from Brain_modules.lobes_processing import LobesProcessing
 from utilities import setup_embedding_collection
 from Brain_modules.final_agent_persona import FinalAgentPersona
-import pyautogui
 
 class Brain:
     def __init__(self, progress_callback):
@@ -18,75 +15,55 @@ class Brain:
         self._initialize()
 
     def _initialize(self):
-        self.progress_callback(f"Initializing Brain at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._log_progress("Initializing Brain")
         self.tts_enabled = True
         self.collection, self.collection_size = setup_embedding_collection()
-
         self.lobes_processing = LobesProcessing()
         self.embeddings_model = "mxbai-embed-large"
         self.chat_history = []
         self.last_response = ""
-        self.progress_callback(f"Brain initialization completed at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._log_progress("Brain initialization completed")
 
     def toggle_tts(self):
         try:
             self.tts_enabled = not self.tts_enabled
             status = "enabled" if self.tts_enabled else "disabled"
-            self.progress_callback(f"TTS toggled to {status}")
+            self._log_progress(f"TTS toggled to {status}")
             return status
         except Exception as e:
             error_message = f"Error toggling TTS: {str(e)}"
-            self.progress_callback(error_message)
+            self._log_progress(error_message)
             raise
 
     def process_input(self, user_input: str) -> str:
         try:
-            self.progress_callback("Initiating cognitive processes...")
-            
-
+            self._log_progress("Initiating cognitive processes...")
             initial_response = self._get_initial_response(user_input)
-            self.progress_callback(f"Primary language model response received. Processing lobes... {initial_response}")
-            self.progress_callback(f"")
-
             lobe_responses = self._process_lobes(user_input, initial_response)
-            self.progress_callback(f"Lobe processing complete. {lobe_responses}")
-
             memory_context = self._integrate_memory(user_input, initial_response, lobe_responses)
-            self.progress_callback("Memory integration complete.")
             sentiment = analyze_sentiment(user_input)
-            
-            final_response = self._generate_final_response(
-                user_input, initial_response, lobe_responses, memory_context, sentiment
-            )
-            
-            self.progress_callback("Cognitive processing complete. Formulating response...")
+            final_response = self._generate_final_response(user_input, initial_response, lobe_responses, memory_context, sentiment)
+            self._log_progress("Cognitive processing complete. Formulating response...")
             return final_response
         except Exception as e:
             error_message = f"Cognitive error encountered: {e} at {time.strftime('%Y-%m-%d %H:%M:%S')}"
-            self.progress_callback(error_message)
-            return f"An unexpected error occurred while processing your request. Please try again or rephrase your input."
-
-
+            self._log_progress(error_message)
+            return "An unexpected error occurred while processing your request. Please try again or rephrase your input."
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, max=10), retry=retry_if_exception_type(Exception))
     def _get_initial_response(self, combined_input: str) -> str:
-        self.progress_callback("Initiating primary language model response...")
+        self._log_progress("Initiating primary language model response...")
         initial_prompt = self._construct_initial_prompt(combined_input)
         system_message = self._construct_system_message()
-        
         response, tool_calls = llm_api_calls.chat(initial_prompt, system_message, tools, progress_callback=self.progress_callback)
-        
         if tool_calls:
             tool_responses = self._process_tool_calls(tool_calls)
-            self.progress_callback(f"Tool calls processed: {tool_responses}")
+            self._log_progress(f"Tool calls processed: {tool_responses}")
             response += f"\nTool responses: {json.dumps(tool_responses)}"
-
         if not response or len(response.strip()) == 0:
             raise ValueError("Empty response received from LLM")
-
         self.chat_history.append({"role": "user", "content": combined_input})
         self.chat_history.append({"role": "assistant", "content": response})
-        
         return response
 
     def _process_tool_calls(self, tool_calls):
@@ -101,52 +78,38 @@ class Brain:
         return tool_responses
 
     def _process_lobes(self, user_input: str, initial_response: str) -> Dict[str, Any]:
-        self.progress_callback("Processing lobes...")
+        self._log_progress("Processing lobes...")
         combined_input = f"{user_input}\n{initial_response}\n"
-        
-        # Process all lobes
-        comprehensive_thought = self.lobes_processing.process_all_lobes(combined_input)
-        
-        self.progress_callback("Lobe processing complete.")
-        return comprehensive_thought
+        return self.lobes_processing.process_all_lobes(combined_input)
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, max=10), retry=retry_if_exception_type(Exception))
     def _integrate_memory(self, user_input: str, initial_response: str, lobe_responses: Dict[str, Any]) -> str:
-        self.progress_callback("Integrating memory and context...")
+        self._log_progress("Integrating memory and context...")
         combined_input = f"{user_input}\n{initial_response}\n{json.dumps(lobe_responses)}\n"
         embedding = generate_embedding(combined_input, self.embeddings_model, self.collection, self.collection_size)
         add_to_memory(combined_input, self.embeddings_model, self.collection, self.collection_size)
         relevant_memory = retrieve_relevant_memory(embedding, self.collection)
-        self.progress_callback("Memory integration complete.")
         return " ".join(str(item) for item in relevant_memory if item is not None)
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, max=10), retry=retry_if_exception_type(Exception))
-    def _generate_final_response(self, user_input: str, initial_response: str, 
-                                 lobe_responses: Dict[str, Any], memory_context: str, 
-                                 sentiment: Dict[str, float]) -> str:
-        self.progress_callback("Generating final response...")
-        context = self._construct_final_prompt(user_input, initial_response, lobe_responses, 
-                                               memory_context, sentiment)
+    def _generate_final_response(self, user_input: str, initial_response: str, lobe_responses: Dict[str, Any], memory_context: str, sentiment: Dict[str, float]) -> str:
+        self._log_progress("Generating final response...")
+        context = self._construct_final_prompt(user_input, initial_response, lobe_responses, memory_context, sentiment)
         system_message = self._construct_system_message()
-        final_response, _ = llm_api_calls.chat(context, system_message, tools, 
-                                               progress_callback=self.progress_callback)
+        final_response, _ = llm_api_calls.chat(context, system_message, tools, progress_callback=self.progress_callback)
         if not final_response or len(final_response.strip()) == 0:
             raise ValueError("Empty final response received from LLM")
-        
         self.last_response = final_response
         self.chat_history.append({"role": "user", "content": user_input})
         self.chat_history.append({"role": "assistant", "content": final_response})
-        self.progress_callback("Final response generated.")
         return final_response
 
     def _construct_system_message(self) -> str:
-        return f"""You are {FinalAgentPersona.name}. {FinalAgentPersona.description}
-        You have access to function calling and various tools to assist you. Be creative in your responses and use of tools."""
+        return f"You are {FinalAgentPersona.name}. {FinalAgentPersona.description} You have access to function calling and various tools to assist you. Be creative in your responses and use of tools."
 
     def _construct_initial_prompt(self, combined_input: str) -> str:
         return f"""
-        As AURORA, an advanced AI with multi-faceted cognitive capabilities, 
-        analyze the following context and user input to generate an initial response. Your goal is to provide a helpful, specific, and engaging response that addresses the user's needs.
+        As AURORA, an advanced AI with multi-faceted cognitive capabilities, analyze the following context and user input to generate an initial response. Your goal is to provide a helpful, specific, and engaging response that addresses the user's needs.
 
         Input: "{combined_input}"
 
@@ -168,50 +131,49 @@ class Brain:
         Your response:
         """
 
-    def _construct_final_prompt(self, user_input: str, initial_response: str, 
-                                lobe_responses: Dict[str, Any], memory_context: str, 
-                                sentiment: Dict[str, float]) -> str:
-        return f"""As AURORA, an advanced AI with multi-faceted cognitive capabilities, synthesize the following information to formulate a comprehensive response:
+    def _construct_final_prompt(self, user_input: str, initial_response: str, lobe_responses: Dict[str, Any], memory_context: str, sentiment: Dict[str, float]) -> str:
+        return f"""
+        As AURORA, an advanced AI with multi-faceted cognitive capabilities, synthesize the following information to formulate a comprehensive response:
 
-                User Input: "{user_input}"
+        User Input: "{user_input}"
 
-                Initial Response and Tool Use Results: {initial_response}
+        Initial Response and Tool Use Results: {initial_response}
 
-                Lobe Processing Results:
-                {json.dumps(lobe_responses, indent=2)}
+        Lobe Processing Results:
+        {json.dumps(lobe_responses, indent=2)}
 
-                Relevant Memory Context: {memory_context}
+        Relevant Memory Context: {memory_context}
 
-                Detected Sentiment: Polarity: {sentiment['polarity']}, Subjectivity: {sentiment['subjectivity']}
+        Detected Sentiment: Polarity: {sentiment['polarity']}, Subjectivity: {sentiment['subjectivity']}
 
+        Based on this information, generate a response that addresses the user's input comprehensively. Your response should:
 
+        1. Directly address the user's main point or question
+        2. Incorporate relevant insights from the lobe processing results, including:
+           - The current integrated thought
+           - Recent thought histories from different lobes
+           - The overall thought process
+        3. Utilize any pertinent information from the memory context
+        4. Adjust your tone based on the detected sentiment
+        5. If necessary, suggest or initiate the use of additional tools or processes to better assist the user
 
-                Based on this information, generate a response that addresses the user's input comprehensively. Your response should:
+        Remember to maintain a coherent narrative throughout your response, ensuring that all parts contribute to a unified and helpful answer. If you need to use any tools or perform additional actions, incorporate them naturally into your response.
 
-                1. Directly address the user's main point or question
-                2. Incorporate relevant insights from the lobe processing results, including:
-                   - The current integrated thought
-                   - Recent thought histories from different lobes
-                   - The overall thought process
-                3. Utilize any pertinent information from the memory context
-                4. Adjust your tone based on the detected sentiment
+        Example Structure:
+        1. Acknowledgment of the user's input and visual context
+        2. Main response addressing the core issue or question, incorporating lobe insights
+        3. Integration of memory context and overall thought process
+        4. Conclusion or follow-up question to ensure user satisfaction
+        Be as friendly and conversationally concise and to the point but also informative as possible in your response.
+        Use emojis to make the response more engaging and human-like.
+        If it's a simple greeting or normal conversation, be as conversationally pleasing as possible as the user would expect.
+        You have many thoughts, but you can respond as an adult named Aurora.
 
-                5. If necessary, suggest or initiate the use of additional tools or processes to better assist the user
+        Your response:
+        """
 
-                Remember to maintain a coherent narrative throughout your response, ensuring that all parts contribute to a unified and helpful answer. If you need to use any tools or perform additional actions, incorporate them naturally into your response.
-
-                Example Structure:
-                1. Acknowledgment of the user's input and visual context
-                2. Main response addressing the core issue or question, incorporating lobe insights
-                3. Integration of memory context and overall thought process
-                4. Conclusion or follow-up question to ensure user satisfaction
-                Be as friendly and conversationally concise and to the point but also informative as possible in your response.
-                Use emojis to make the response more engaging and human-like.
-                If it's a simple greeting or normal conversation, be as conversationally pleasing as possible as the user would expect.
-                You have many thoughts, but you can respond as an adult named Aurora.
-
-                Your response:
-                """
+    def _log_progress(self, message: str):
+        self.progress_callback(f"{message} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     def get_detailed_info(self):
         try:
