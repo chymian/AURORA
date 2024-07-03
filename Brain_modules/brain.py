@@ -6,7 +6,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from Brain_modules.llm_api_calls import llm_api_calls, tools
 from Brain_modules.memory_utils import generate_embedding, add_to_memory, retrieve_relevant_memory
 from Brain_modules.sentiment_analysis import analyze_sentiment
-from Brain_modules.image_vision import ImageVision
+
 from Brain_modules.lobes_processing import LobesProcessing
 from utilities import setup_embedding_collection
 from Brain_modules.final_agent_persona import FinalAgentPersona
@@ -21,8 +21,8 @@ class Brain:
         self.progress_callback(f"Initializing Brain at {time.strftime('%Y-%m-%d %H:%M:%S')}")
         self.tts_enabled = True
         self.collection, self.collection_size = setup_embedding_collection()
-        self.image_vision = ImageVision()
-        self.lobes_processing = LobesProcessing(self.image_vision)
+
+        self.lobes_processing = LobesProcessing()
         self.embeddings_model = "mxbai-embed-large"
         self.chat_history = []
         self.last_response = ""
@@ -43,23 +43,20 @@ class Brain:
         try:
             self.progress_callback("Initiating cognitive processes...")
             
-            screenshot_description = self._capture_and_analyze_screenshot()
-            self.progress_callback(f"")
-            self._integrate_memory(user_input, "", {}, screenshot_description)
-            combined_input = f"{user_input}\nContext from screenshot: {screenshot_description}"
-            initial_response = self._get_initial_response(combined_input)
+
+            initial_response = self._get_initial_response(user_input)
             self.progress_callback(f"Primary language model response received. Processing lobes... {initial_response}")
             self.progress_callback(f"")
 
-            lobe_responses = self._process_lobes(user_input, initial_response, screenshot_description)
+            lobe_responses = self._process_lobes(user_input, initial_response)
             self.progress_callback(f"Lobe processing complete. {lobe_responses}")
 
-            memory_context = self._integrate_memory(user_input, initial_response, lobe_responses, screenshot_description)
+            memory_context = self._integrate_memory(user_input, initial_response, lobe_responses)
             self.progress_callback("Memory integration complete.")
             sentiment = analyze_sentiment(user_input)
             
             final_response = self._generate_final_response(
-                user_input, initial_response, lobe_responses, memory_context, sentiment, screenshot_description
+                user_input, initial_response, lobe_responses, memory_context, sentiment
             )
             
             self.progress_callback("Cognitive processing complete. Formulating response...")

@@ -13,11 +13,11 @@ from Brain_modules.lobes.association_areas import AssociationAreas
 from Brain_modules.lobes.wernickes_area import WernickesArea
 
 class LobesProcessing:
-    def __init__(self, image_vision):
+    def __init__(self):
         """
         Initializes the LobesProcessing class and sets up the individual lobes.
         """
-        self.image_vision = image_vision
+        
         self.lobes = self._initialize_lobes()
         self.responses = Queue()
 
@@ -118,23 +118,3 @@ class LobesProcessing:
             for lobe_name in self.lobes.keys():
                 self.process_lobe(lobe_name, prompt)
 
-if __name__ == "__main__":
-    lobes_processor = LobesProcessing(image_vision=False)
-    
-    # Example to train with a small percentage of a Hugging Face dataset
-    lobes_processor.train_lobes_with_dataset('ag_news', percentage=0.01)
-    
-    test_prompts = [
-        "The box is above the table, near the window",
-        "I feel a rough texture and cold temperature",
-        "Navigate to the nearest exit using the map",
-        "Calculate the distance between points A (2,3) and B (5,7)",
-        "The room temperature is 72 degrees",
-        "Process this sentence without any spatial or numerical content",
-        "Error: setting an array element with a sequence",
-        "sup man its me Anthony"
-    ]
-    
-    for prompt in test_prompts:
-        final_thought = lobes_processor.process_all_lobes(prompt)
-        print(f"\nFinal Combined Thought for prompt '{prompt}':\n{final_thought}\n")
