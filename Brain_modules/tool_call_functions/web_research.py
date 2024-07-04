@@ -1,145 +1,350 @@
+import random
+import json
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Tuple
-import nltk
-from nltk.tokenize import sent_tokenize
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.common.exceptions import WebDriverException, NoSuchElementException, TimeoutException
+import trafilatura
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import KMeans
-from nltk.sentiment import SentimentIntensityAnalyzer
+from sklearn.metrics.pairwise import cosine_similarity
+import networkx as nx
 
-nltk.download('punkt', quiet=True)
-nltk.download('vader_lexicon', quiet=True)
+class SelectorRL:
+    def __init__(self):
+        self.selectors = {
+            # "google": {
+            #     "search_box": ["input[name='q']", "textarea[name='q']", "#search-input"],
+            #     "result": ["div.g", "div.tF2Cxc", "div.yuRUbf"]
+            # },
+            # "bing": {
+            #     "search_box": ["input[name='q']", "#sb_form_q"],
+            #     "result": ["li.b_algo", "div.b_title", "h2"]
+            # },
+            "brave": {
+                "search_box": ["input[name='q']", "#searchbox"],
+                "result": ["div.snippet", "div.fdb", "div.result"]
+            }
+        }
+        self.q_values = {engine: {selector: 0 for selector_type in selectors.values() for selector in selector_type} for engine, selectors in self.selectors.items()}
+        self.learning_rate = 0.1
+        self.discount_factor = 0.9
+        self.epsilon = 0.1
+
+    def get_selector(self, engine, selector_type):
+        if random.random() < self.epsilon:
+            return random.choice(self.selectors[engine][selector_type])
+        else:
+            return max(self.selectors[engine][selector_type], key=lambda s: self.q_values[engine][s])
+
+    def update_q_value(self, engine, selector, reward):
+        self.q_values[engine][selector] += self.learning_rate * (reward - self.q_values[engine][selector])
+
+    def add_new_selector(self, engine, selector_type, new_selector):
+        if new_selector not in self.selectors[engine][selector_type]:
+            self.selectors[engine][selector_type].append(new_selector)
+            self.q_values[engine][new_selector] = 0
+
+    def save_state(self, filename='selector_rl_state.json'):
+        state = {
+            'q_values': self.q_values,
+            'selectors': self.selectors
+        }
+        with open(filename, 'w') as f:
+            json.dump(state, f)
+
+    def load_state(self, filename='selector_rl_state.json'):
+        try:
+            with open(filename, 'r') as f:
+                state = json.load(f)
+            self.q_values = state['q_values']
+            self.selectors = state['selectors']
+        except FileNotFoundError:
+            print("No saved state found. Starting with default values.")
 
 class WebResearchTool:
-    def __init__(self, max_results=15, max_content_length=4000, progress_callback = None):
-        self.max_results = max_results
+    def __init__(self, max_content_length=1000):
         self.max_content_length = max_content_length
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        self.vectorizer = TfidfVectorizer(stop_words='english')
-        self.sentiment_analyzer = SentimentIntensityAnalyzer()
-        self.driver = self._setup_selenium()
+        self.selector_rl = SelectorRL()
+        self.selector_rl.load_state()
+        self.vectorizer = TfidfVectorizer()
 
-    def _setup_selenium(self):
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--no-sandbox")
-        driver = webdriver.Chrome(options=chrome_options)
-        return driver
+    def _initialize_webdriver(self):
+        options = webdriver.ChromeOptions()
+        #headless mode
+        options.add_argument("--headless")
+        service = ChromeService(ChromeDriverManager().install())
+        return webdriver.Chrome(service=service, options=options)
 
-    def web_research(self, query: str, progress_callback=None) -> str:
+    def find_new_selector(self, driver, element_type):
+        if element_type == "search_box":
+            potential_selectors = driver.find_elements(By.XPATH, "//input[@type='text'] | //input[@type='search'] | //textarea")
+        else:  # result
+            potential_selectors = driver.find_elements(By.XPATH, "//div[.//a] | //li[.//a] | //h2[.//a]")
+
+        for element in potential_selectors:
+            try:
+                selector = self.get_css_selector(driver, element)
+                return selector
+            except:
+                continue
+        return None
+
+    def get_css_selector(self, driver, element):
+        return driver.execute_script("""
+            var path = [];
+            var element = arguments[0];
+            while (element.nodeType === Node.ELEMENT_NODE) {
+                var selector = element.nodeName.toLowerCase();
+                if (element.id) {
+                    selector += '#' + element.id;
+                    path.unshift(selector);
+                    break;
+                } else {
+                    var sibling = element;
+                    var nth = 1;
+                    while (sibling.previousElementSibling) {
+                        sibling = sibling.previousElementSibling;
+                        if (sibling.nodeName.toLowerCase() == selector)
+                            nth++;
+                    }
+                    if (nth != 1)
+                        selector += ":nth-of-type("+nth+")";
+                }
+                path.unshift(selector);
+                element = element.parentNode;
+            }
+            return path.join(' > ');
+        """, element)
+
+    def extract_text_from_url(self, url, progress_callback=None):
+        if progress_callback:
+            progress_callback(f"Extracting text from URL: {url}")
         try:
-            search_results = self._search(query)
-            with ThreadPoolExecutor(max_workers=self.max_results) as executor:
-                future_to_url = {executor.submit(self._extract_content, url): url for url in search_results}
-                contents = []
-                for future in as_completed(future_to_url):
-                    url = future_to_url[future]
-                    try:
-                        content = future.result()
-                        if content:
-                            contents.append((url, content))
-                    except Exception as exc:
-                        print(f"{url} generated an exception: {exc}")
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            text = trafilatura.extract(response.text, include_comments=False, include_tables=False)
+            if text and len(text) >= 50:
+                if progress_callback:
+                    progress_callback(f"Successfully extracted text from URL: {url}")
+                return text
 
-            if not contents:
-                return f"No relevant information found for the query: {query}"
-
-            summarized_content = self._summarize_content(query, contents)
-            return summarized_content
+            if progress_callback:
+                progress_callback(f"Using WebDriver to extract text from URL: {url}")
+            driver = self._initialize_webdriver()
+            driver.get(url)
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            for element in soup(['script', 'style', 'nav', 'footer', 'aside']):
+                element.decompose()
+            text = ' '.join(p.get_text().strip() for p in soup.find_all('p') if len(p.get_text().strip()) > 20)
+            if len(text) >= 50:
+                if progress_callback:
+                    progress_callback(f"Successfully extracted text from URL: {url}")
+                return text
+            else:
+                if progress_callback:
+                    progress_callback(f"Failed to extract sufficient text from URL: {url}")
+                return None
         except Exception as e:
-            return f"An error occurred during web research: {str(e)}. Please try a different query or check your internet connection."
+            if progress_callback:
+                progress_callback(f"Error extracting text from URL {url}: {e}")
+            return None
+        finally:
+            if 'driver' in locals():
+                driver.quit()
 
-    def _search(self, query: str) -> List[str]:
-        url = f"https://www.google.com/search?q={query}&num={self.max_results}"
-        response = requests.get(url, headers=self.headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
+    def crawl_website(self, url, max_pages=5, progress_callback=None):
+        if progress_callback:
+            progress_callback(f"Starting crawl of website: {url}")
+        visited = set()
+        to_visit = [url]
+        graph = nx.DiGraph()
+        content = {}
+
+        while to_visit and len(visited) < max_pages:
+            current_url = to_visit.pop(0)
+            if current_url in visited:
+                continue
+
+            visited.add(current_url)
+            if progress_callback:
+                progress_callback(f"Crawling: {current_url}")
+
+            try:
+                response = requests.get(current_url, timeout=10)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, 'html.parser')
+
+                # Extract content
+                text = self.extract_text_from_url(current_url, progress_callback)
+                if text:
+                    content[current_url] = text
+
+                # Find links
+                for link in soup.find_all('a', href=True):
+                    href = link['href']
+                    full_url = requests.compat.urljoin(current_url, href)
+                    if full_url.startswith(url):  # Stay on the same domain
+                        graph.add_edge(current_url, full_url)
+                        if full_url not in visited:
+                            to_visit.append(full_url)
+
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(f"Error crawling {current_url}: {e}")
+
+        if progress_callback:
+            progress_callback(f"Finished crawling website: {url}")
+        return graph, content
+
+    def calculate_similarity(self, query, text):
+        tfidf_matrix = self.vectorizer.fit_transform([query, text])
+        return cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+
+    def web_research(self, query, progress_callback=None):
+        if progress_callback:
+            progress_callback("Starting web research...")
+
+        combined_query = query
+        search_engines = [
+            # ("https://www.google.com/search", "google"),
+            # ("https://www.bing.com/search", "bing"),
+            ("https://search.brave.com/search", "brave")
+        ]
         search_results = []
-        for g in soup.find_all('div', class_='g'):
-            anchors = g.find_all('a')
-            if anchors:
-                link = anchors[0]['href']
-                if link.startswith('http'):
-                    search_results.append(link)
-                    if len(search_results) == self.max_results:
-                        break
-        return search_results
 
-    def _extract_content(self, url: str) -> str:
-        try:
-            self.driver.get(url)
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-            paragraphs = soup.find_all('p')
-            content = ' '.join(p.get_text().strip() for p in paragraphs if p.get_text().strip())
-            return content
-        except Exception as e:
-            print(f"Error extracting content from {url}: {e}")
-            return ""
+        for engine_url, engine_name in search_engines:
+            if progress_callback:
+                progress_callback(f"Using search engine: {engine_name}")
 
-    def _summarize_content(self, query: str, contents: List[Tuple[str, str]]) -> str:
-        all_sentences = []
-        for url, content in contents:
-            sentences = sent_tokenize(content)
-            all_sentences.extend([(sentence, url) for sentence in sentences])
+            try:
+                driver = self._initialize_webdriver()
+                driver.get(engine_url)
+                
+                search_box_selector = self.selector_rl.get_selector(engine_name, "search_box")
+                result_selector = self.selector_rl.get_selector(engine_name, "result")
+                
+                if progress_callback:
+                    progress_callback(f"Using selectors for {engine_name}: Search box: {search_box_selector}, Result: {result_selector}")
+                
+                try:
+                    search_box = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, search_box_selector))
+                    )
+                    search_box.send_keys(combined_query)
+                    search_box.send_keys(Keys.RETURN)
+                    
+                    if progress_callback:
+                        progress_callback(f"Submitted query to {engine_name}")
+                    
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, result_selector))
+                    )
+                    
+                    soup = BeautifulSoup(driver.page_source, 'html.parser')
+                    results = soup.select(result_selector)[:5]  # Top 5 results
+                    
+                    if results:
+                        if progress_callback:
+                            progress_callback(f"Found {len(results)} results from {engine_name}")
+                        self.selector_rl.update_q_value(engine_name, search_box_selector, 1)
+                        self.selector_rl.update_q_value(engine_name, result_selector, 1)
+                    else:
+                        if progress_callback:
+                            progress_callback(f"No results found with current selectors for {engine_name}. Attempting to find new selectors.")
+                        new_search_box_selector = self.find_new_selector(driver, "search_box")
+                        new_result_selector = self.find_new_selector(driver, "result")
+                        
+                        if new_search_box_selector and new_result_selector:
+                            self.selector_rl.add_new_selector(engine_name, "search_box", new_search_box_selector)
+                            self.selector_rl.add_new_selector(engine_name, "result", new_result_selector)
+                            if progress_callback:
+                                progress_callback(f"New selectors found for {engine_name}: Search box: {new_search_box_selector}, Result: {new_result_selector}")
+                            
+                            # Retry with new selectors
+                            driver.get(engine_url)
+                            search_box = WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, new_search_box_selector))
+                            )
+                            search_box.send_keys(combined_query)
+                            search_box.send_keys(Keys.RETURN)
+                            
+                            WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, new_result_selector))
+                            )
+                            
+                            soup = BeautifulSoup(driver.page_source, 'html.parser')
+                            results = soup.select(new_result_selector)[:5]
+                            
+                            if progress_callback:
+                                progress_callback(f"Found {len(results)} results from {engine_name} with new selectors")
+                    
+                    for result in results:
+                        link = result.select_one('a')
+                        if link and link.get('href'):
+                            url = link['href']
+                            if url.startswith('http'):
+                                if progress_callback:
+                                    progress_callback(f"Crawling website: {url}")
+                                graph, crawled_content = self.crawl_website(url, progress_callback=progress_callback)
+                                for page_url, content in crawled_content.items():
+                                    similarity = self.calculate_similarity(combined_query, content)
+                                    if similarity > 0.1:  # Adjust threshold as needed
+                                        search_results.append({
+                                            "title": link.get_text(),
+                                            "link": page_url,
+                                            "content": content,
+                                            "similarity": similarity
+                                        })
+                                        if progress_callback:
+                                            progress_callback(f"Added result from {page_url} with similarity {similarity:.2f}")
+                except (NoSuchElementException, TimeoutException) as e:
+                    if progress_callback:
+                        progress_callback(f"Error interacting with search engine {engine_url}: {e}")
+                    self.selector_rl.update_q_value(engine_name, search_box_selector, -1)
+                    self.selector_rl.update_q_value(engine_name, result_selector, -1)
+            except WebDriverException as e:
+                if progress_callback:
+                    progress_callback(f"WebDriver error with search engine {engine_url}: {e}")
+            finally:
+                driver.quit()
 
-        if not all_sentences:
-            return f"No relevant information found for the query: {query}"
+        self.selector_rl.save_state()
 
-        sentence_vectors = self.vectorizer.fit_transform([sentence for sentence, _ in all_sentences])
-        
-        num_clusters = min(5, len(all_sentences))
-        kmeans = KMeans(n_clusters=num_clusters, random_state=42)
-        kmeans.fit(sentence_vectors)
-        
-        cluster_sentences = [[] for _ in range(num_clusters)]
-        for idx, label in enumerate(kmeans.labels_):
-            cluster_sentences[label].append(all_sentences[idx])
-        
-        summary = self._format_summary(query, cluster_sentences)
-        return summary
+        if not search_results:
+            if progress_callback:
+                progress_callback(f"No results found for the query: {combined_query}")
+            return f"No results found for the query: {combined_query}"
 
-    def _format_summary(self, query: str, cluster_sentences: List[List[Tuple[str, str]]]) -> str:
-        formatted_summary = f"Web research results for '{query}':\n\n"
-        
-        for i, cluster in enumerate(cluster_sentences, 1):
-            if cluster:
-                representative_sentence = max(cluster, key=lambda x: len(x[0]))
-                sentiment = self.sentiment_analyzer.polarity_scores(representative_sentence[0])
-                sentiment_summary = f" (Sentiment: {sentiment})"
-                formatted_summary += f"{i}. {representative_sentence[0]}{sentiment_summary}\n"
-                for sentence, url in cluster[:2]:  # Include up to 2 supporting sentences
-                    if sentence != representative_sentence[0]:
-                        formatted_summary += f"   - {sentence}\n"
-                formatted_summary += "\n"
-        
-        # Add sources
-        formatted_summary += "Sources:\n"
-        unique_urls = set()
-        for cluster in cluster_sentences:
-            for _, url in cluster:
-                if url not in unique_urls:
-                    unique_urls.add(url)
-                    formatted_summary += f"- {url}\n"
-                if len(unique_urls) >= 10:  # Limit to 10 sources
-                    break
-            if len(unique_urls) >= 10:
+        # Sort results by similarity
+        search_results.sort(key=lambda x: x['similarity'], reverse=True)
+
+        if progress_callback:
+            progress_callback(f"Found {len(search_results)} relevant results. Aggregating content...")
+
+        aggregated_content = ""
+        for result in search_results:
+            if len(aggregated_content) + len(result['content']) <= self.max_content_length:
+                aggregated_content += f"[Source: {result['link']}]\n{result['content']}\n\n"
+                if progress_callback:
+                    progress_callback(f"Added content from {result['link']}")
+            else:
+                remaining_chars = self.max_content_length - len(aggregated_content)
+                aggregated_content += f"[Source: {result['link']}]\n{result['content'][:remaining_chars]}"
+                if progress_callback:
+                    progress_callback(f"Added partial content from {result['link']} (reached max content length)")
                 break
-        
-        # Ensure the summary is within max_content_length
-        if len(formatted_summary) > self.max_content_length:
-            formatted_summary = formatted_summary[:self.max_content_length] + '...'
-        
-        return formatted_summary
 
-    def __del__(self):
-        self.driver.quit()
+        if progress_callback:
+            progress_callback("Web research completed.")
 
-# if __name__ == "__main__":
-#     research_tool = WebResearchTool()
-#     result = research_tool.web_research("Latest advancements in artificial intelligence")
-#     print(result)
+        return aggregated_content.strip() if aggregated_content else f"Unable to retrieve relevant content for the query: {combined_query}"
+# test = WebResearchTool()
+# print(test.web_research("Python programming practices"))
+# print("Done")

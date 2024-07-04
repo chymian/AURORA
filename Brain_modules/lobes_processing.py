@@ -1,4 +1,3 @@
-
 from queue import Queue
 from collections import defaultdict
 from datasets import load_dataset
@@ -17,7 +16,6 @@ class LobesProcessing:
         """
         Initializes the LobesProcessing class and sets up the individual lobes.
         """
-        
         self.lobes = self._initialize_lobes()
         self.responses = Queue()
 
@@ -51,7 +49,10 @@ class LobesProcessing:
         """
         lobe = self.lobes.get(lobe_name)
         if lobe:
-            return lobe.process(prompt)
+            try:
+                return lobe.process(prompt)
+            except Exception as e:
+                return f"Error in {lobe_name} processing: {str(e)}"
         else:
             return f"Error: {lobe_name} processing method not found."
 
@@ -67,7 +68,10 @@ class LobesProcessing:
         """
         combined_responses = []
         for lobe_name, lobe in self.lobes.items():
-            response = lobe.process(prompt)
+            try:
+                response = lobe.process(prompt)
+            except Exception as e:
+                response = f"Error in {lobe_name} processing: {str(e)}"
             self.responses.put((lobe_name, response))
             combined_responses.append(f"{lobe_name.capitalize()} Lobe: {response}")
         
@@ -85,7 +89,7 @@ class LobesProcessing:
             str: The cohesive inner voice.
         """
         cohesive_thought = ". ".join(responses)
-        return f"Inner Voice from yoru lobes: {cohesive_thought}"
+        return f"Inner Voice from your lobes: {cohesive_thought}"
 
     def load_and_preprocess_dataset(self, dataset_name, split='train', percentage=0.01):
         """
@@ -117,4 +121,3 @@ class LobesProcessing:
             prompt = data["text"]
             for lobe_name in self.lobes.keys():
                 self.process_lobe(lobe_name, prompt)
-

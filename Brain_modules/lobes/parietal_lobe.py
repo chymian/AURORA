@@ -1,5 +1,3 @@
-# parietal_lobe.py
-
 import numpy as np
 import time
 import re
@@ -14,17 +12,14 @@ class ParietalLobe:
         Initializes the ParietalLobe class with predefined sets of keywords for spatial, sensory, and navigation processing.
         Also initializes the machine learning model for learning and adaptation.
         """
-        print("Initializing ParietalLobe...")
         self.spatial_keywords = ['up', 'down', 'left', 'right', 'above', 'below', 'near', 'far']
         self.sensory_keywords = ['touch', 'feel', 'texture', 'temperature', 'pressure', 'pain']
         self.navigation_keywords = ['map', 'route', 'direction', 'location', 'distance', 'navigate']
 
-        # Initialize the CountVectorizer and Naive Bayes model
         self.vectorizer = CountVectorizer()
         self.model = MultinomialNB()
         self.pipeline = make_pipeline(self.vectorizer, self.model)
 
-        # Initial training data to avoid the "not fitted" error
         initial_data = [
             "The box is above the table, near the window",
             "I feel a rough texture and cold temperature",
@@ -33,15 +28,10 @@ class ParietalLobe:
             "The room temperature is 72 degrees",
             "Process this sentence without any spatial or numerical content"
         ]
-        initial_labels = [0, 1, 0, 1, 0, 0]  # Arbitrary labels
-        print("Fitting initial data to pipeline...")
+        initial_labels = [0, 1, 0, 1, 0, 0]
         self.pipeline.fit(initial_data, initial_labels)
 
-        # Load existing model and vectorizer state if available
-        print("Loading model...")
         self._load_model()
-
-        # Error collection structure
         self.error_log = []
 
     def _load_model(self):
@@ -51,9 +41,8 @@ class ParietalLobe:
         try:
             with open('parietal_lobe_model.pkl', 'rb') as f:
                 self.pipeline = pickle.load(f)
-            print("Model loaded successfully.")
         except FileNotFoundError:
-            print("No saved model found. Proceeding with the initial model.")
+            pass
 
     def _save_model(self):
         """
@@ -61,19 +50,28 @@ class ParietalLobe:
         """
         with open('parietal_lobe_model.pkl', 'wb') as f:
             pickle.dump(self.pipeline, f)
-        print("Model saved successfully.")
 
     def _preprocess_prompt(self, prompt):
         """
         Preprocesses the input prompt to ensure it is clean and consistent.
+
+        Args:
+            prompt (str): The input sentence to be preprocessed.
+
+        Returns:
+            str: The cleaned and preprocessed prompt.
         """
-        # Implement any additional preprocessing steps here
         return prompt
 
     def _extract_features(self, prompt):
         """
         Extracts feature vectors from the given prompt using CountVectorizer.
-        Ensures consistent feature extraction for both training and prediction.
+
+        Args:
+            prompt (str): The input sentence to be vectorized.
+
+        Returns:
+            scipy.sparse.csr.csr_matrix: The feature vectors extracted from the prompt.
         """
         return self.pipeline.named_steps['countvectorizer'].transform([prompt])
 
@@ -88,28 +86,19 @@ class ParietalLobe:
         Returns:
             str: A detailed response summarizing the analysis of the prompt.
         """
-        print(f"Processing prompt: '{prompt}'")
         prompt = self._preprocess_prompt(prompt)
-        print(f"Parietal lobe processing at {time.strftime('%Y-%m-%d %H:%M:%S')}")
         
         try:
             features = self._extract_features(prompt)
-            print(f"Features: {features.toarray()}")
             prediction = self.pipeline.named_steps['multinomialnb'].predict(features)
-            print(f"Prediction: {prediction}")
 
             spatial_analysis = self._analyze_spatial_content(prompt)
-            print(f"Spatial Analysis: {spatial_analysis}")
             sensory_integration = self._integrate_sensory_information(prompt)
-            print(f"Sensory Integration: {sensory_integration}")
             navigation_assessment = self._assess_navigation(prompt)
-            print(f"Navigation Assessment: {navigation_assessment}")
             numerical_analysis = self._analyze_numerical_data(prompt)
-            print(f"Numerical Analysis: {numerical_analysis}")
 
             for _ in range(3):
                 time.sleep(0.5)
-                print(f"Parietal lobe processing: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
             analysis = {
                 "Spatial Analysis": spatial_analysis,
@@ -117,14 +106,11 @@ class ParietalLobe:
                 "Navigation Assessment": navigation_assessment,
                 "Numerical Analysis": numerical_analysis
             }
-            print(f"Full Analysis: {analysis}")
 
-            # Train the model incrementally with the new data
             self._train_model(prompt, analysis)
 
             return f"Parietal Lobe Response: Spatial-sensory integration complete. {self._summarize_analysis(analysis)}"
         except Exception as e:
-            print(f"Error in processing: {str(e)}")
             self._handle_error(prompt, e)
             return f"Parietal Lobe Response: Error in processing: {str(e)}. Spatial-sensory systems recalibrating."
 
@@ -136,22 +122,17 @@ class ParietalLobe:
             prompt (str): The input sentence.
             analysis (dict): The analysis result of the prompt.
         """
-        print(f"Training model with prompt: '{prompt}'")
         labels = [1 if "detected" in label or "processing" in label or "identified" in label or "found" in label else 0 for label in [
             analysis["Spatial Analysis"], 
             analysis["Sensory Integration"], 
             analysis["Navigation Assessment"], 
             analysis["Numerical Analysis"]
         ]]
-        print(f"Labels: {labels}")
 
-        # Update the vectorizer and model with the new data
         feature_vector = self._extract_features(prompt)
         feature_vector = np.vstack([feature_vector.toarray()] * len(labels))
         self.pipeline.named_steps['multinomialnb'].partial_fit(feature_vector, labels, classes=np.array([0, 1]))
-        print("Model trained successfully.")
 
-        # Save the updated model
         self._save_model()
 
     def _analyze_spatial_content(self, prompt):
@@ -249,43 +230,4 @@ class ParietalLobe:
             prompt (str): The input sentence that caused the error.
             error (Exception): The error encountered during processing.
         """
-        print(f"Handling error: {error}")
         self.error_log.append((prompt, str(error)))
-
-        # Simple adaptive logic: log the error and retrain with a modified label
-        if 'setting an array element with a sequence' in str(error):
-            # Example logic: Add the prompt with a generic label and retrain
-            self._retrain_with_error_prompt(prompt)
-
-    def _retrain_with_error_prompt(self, prompt):
-        """
-        Retrains the model with the prompt that caused an error, using a generic label.
-
-        Args:
-            prompt (str): The input sentence that caused the error.
-        """
-        print(f"Retraining model with error prompt: '{prompt}'")
-        error_data = [prompt]
-        error_labels = [0]  # Generic label for error handling
-        self.pipeline.fit(error_data, error_labels)
-        print("Model retrained with error prompt.")
-
-        # Save the updated model
-        self._save_model()
-
-if __name__ == "__main__":
-    parietal_lobe = ParietalLobe()
-    test_prompts = [
-        "The box is above the table, near the window",
-        "I feel a rough texture and cold temperature",
-        "Navigate to the nearest exit using the map",
-        "Calculate the distance between points A (2,3) and B (5,7)",
-        "The room temperature is 72 degrees",
-        "Process this sentence without any spatial or numerical content",
-        "Error: setting an array element with a sequence",
-        "sup man its me Anthony"
-    ]
-    for prompt in test_prompts:
-        print(f"\nTesting prompt: '{prompt}'")
-        result = parietal_lobe.process(prompt)
-        print(result)

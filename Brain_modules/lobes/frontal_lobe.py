@@ -14,11 +14,50 @@ class FrontalLobe:
         self.priority_words = set(['urgent', 'important', 'critical', 'immediately', 'deadline', 'crucial'])
         self.decision_history = []
         self.tools = [
-            {"name": "run_local_command", "description": "Execute a local command on the system"},
-            {"name": "web_research", "description": "Perform a web research query"},
-            {"name": "analyze_image", "description": "Analyze an image from a URL or local path"},
-            {"name": "check_os_default_calendar", "description": "Check the calendar or create a calendar event"},
-            {"name": "text_response", "description": "Provide a regular text response"}
+            {
+                "name": "run_local_command",
+                "description": "Execute a local command on the system to perform tasks such as file manipulation, retrieving system information, or running scripts.",
+                "parameters": {
+                    "command": {
+                        "type": "string",
+                        "description": "The specific command to execute on the local system."
+                    }
+                }
+            },
+            {
+                "name": "web_research",
+                "description": "Perform a web research query to gather information from online sources.",
+                "parameters": {
+                    "query": {
+                        "type": "string",
+                        "description": "The research query to perform."
+                    }
+                }
+            },
+            {
+                "name": "analyze_image",
+                "description": "Analyze an image from a provided URL or a local path and generate a description of the image's content.",
+                "parameters": {
+                    "image_url": {
+                        "type": "string",
+                        "description": "The URL or local path of the image to analyze."
+                    }
+                }
+            },
+            {
+                "name": "call_expert",
+                "description": "A tool that can ask an expert in any field by providing the expertise and the question. The expert will answer the question.",
+                "parameters": {
+                    "expertise": {
+                        "type": "string",
+                        "description": "The expertise of the expert you need. IE: math, science, etc."
+                    },
+                    "question": {
+                        "type": "string",
+                        "description": "The question you want to ask the expert."
+                    }
+                }
+            }
         ]
 
     def process(self, prompt: str) -> Dict[str, Any]:
@@ -70,8 +109,8 @@ class FrontalLobe:
             return "web_research", 0.9
         elif any(word in prompt.lower() for word in ['image', 'picture', 'photo']):
             return "analyze_image", 0.9
-        elif any(word in prompt.lower() for word in ['schedule', 'calendar', 'event']):
-            return "check_os_default_calendar", 0.9
+        elif any(word in prompt.lower() for word in ['expert', 'question']):
+            return "call_expert", 0.9
         else:
             return "text_response", 0.8
 
@@ -96,8 +135,9 @@ class FrontalLobe:
             tool_call["arguments"]["query"] = priority_words
         elif action == "analyze_image":
             tool_call["arguments"]["image_url"] = "path/to/image.jpg"  # Placeholder
-        elif action == "check_os_default_calendar":
-            tool_call["arguments"]["date"] = time.strftime("%Y-%m-%d")
+        elif action == "call_expert":
+            tool_call["arguments"]["expertise"] = "general"  # Placeholder
+            tool_call["arguments"]["question"] = priority_words
         
         return {
             "response": f"The frontal lobe recommends using the {action} tool for effective task execution.",
@@ -121,7 +161,3 @@ class FrontalLobe:
             "Decision History": self.decision_history[-5:],
             "Input Prompt": prompt
         }
-
-# test = FrontalLobe()
-# print(test.process("Please run the command to execute the program"))
-# print(test.process("I am feeling sad today"))
