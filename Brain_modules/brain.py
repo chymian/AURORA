@@ -1,26 +1,26 @@
 import json
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Callable
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from Brain_modules.llm_api_calls import llm_api_calls, tools
 from Brain_modules.memory_utils import generate_embedding, add_to_memory, retrieve_relevant_memory
 from Brain_modules.sentiment_analysis import analyze_sentiment
 from Brain_modules.lobes_processing import LobesProcessing
-from utilities import setup_embedding_collection
 from Brain_modules.final_agent_persona import FinalAgentPersona
 
 class Brain:
-    def __init__(self, progress_callback):
+    def __init__(self, progress_callback: Callable[[str], None], collection, collection_size):
         self.progress_callback = progress_callback
+        self.collection = collection
+        self.collection_size = collection_size
         self._initialize()
 
     def _initialize(self):
         self._log_progress("Initializing Brain")
         self.tts_enabled = True
-        self.collection, self.collection_size = setup_embedding_collection()
         self.lobes_processing = LobesProcessing()
         self.embeddings_model = "mxbai-embed-large"
-        self.chat_history = []
+        self.chat_histories = {}
         self.last_response = ""
         self._log_progress("Brain initialization completed")
 
@@ -35,14 +35,14 @@ class Brain:
             self._log_progress(error_message)
             raise
 
-    def process_input(self, user_input: str) -> str:
+    def process_input(self, user_input: str, session_id: str) -> str:
         try:
             self._log_progress("Initiating cognitive processes...")
-            initial_response = self._get_initial_response(user_input)
+            initial_response = self._get_initial_response(user_input, session_id)
             lobe_responses = self._process_lobes(user_input, initial_response)
             memory_context = self._integrate_memory(user_input, initial_response, lobe_responses)
             sentiment = analyze_sentiment(user_input)
-            final_response = self._generate_final_response(user_input, initial_response, lobe_responses, memory_context, sentiment)
+            final_response = self._generate_final_response(user_input, initial_response, lobe_responses, memory_context, sentiment, session_id)
             self._log_progress("Cognitive processing complete. Formulating response...")
             return final_response
         except Exception as e:
@@ -51,7 +51,7 @@ class Brain:
             return "An unexpected error occurred while processing your request. Please try again or rephrase your input."
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, max=10), retry=retry_if_exception_type(Exception))
-    def _get_initial_response(self, combined_input: str) -> str:
+    def _get_initial_response(self, combined_input: str, session_id: str) -> str:
         self._log_progress("Initiating primary language model response...")
         initial_prompt = self._construct_initial_prompt(combined_input)
         system_message = self._construct_system_message()
@@ -62,8 +62,8 @@ class Brain:
             response += f"\nTool responses: {json.dumps(tool_responses)}"
         if not response or len(response.strip()) == 0:
             raise ValueError("Empty response received from LLM")
-        self.chat_history.append({"role": "user", "content": combined_input})
-        self.chat_history.append({"role": "assistant", "content": response})
+        self._update_chat_history(session_id, {"role": "user", "content": combined_input})
+        self._update_chat_history(session_id, {"role": "assistant", "content": response})
         return response
 
     def _process_tool_calls(self, tool_calls):
@@ -72,9 +72,14 @@ class Brain:
             function_name = tool_call.function.name
             function_to_call = llm_api_calls.available_functions.get(function_name)
             if function_to_call:
-                function_args = json.loads(tool_call.function.arguments)
-                function_response = function_to_call(**function_args, progress_callback=self.progress_callback)
-                tool_responses[function_name] = function_response
+                try:
+                    function_args = json.loads(tool_call.function.arguments)
+                    function_response = function_to_call(**function_args, progress_callback=self.progress_callback)
+                    tool_responses[function_name] = function_response
+                except Exception as e:
+                    if self.progress_callback:
+                        self.progress_callback(f"Error in {function_name}: {str(e)}")
+                    tool_responses[function_name] = {"error": str(e)}
         return tool_responses
 
     def _process_lobes(self, user_input: str, initial_response: str) -> Dict[str, Any]:
@@ -88,11 +93,12 @@ class Brain:
         combined_input = f"{user_input}\n{initial_response}\n{json.dumps(lobe_responses)}\n"
         embedding = generate_embedding(combined_input, self.embeddings_model, self.collection, self.collection_size)
         add_to_memory(combined_input, self.embeddings_model, self.collection, self.collection_size)
+        self.collection_size += 1
         relevant_memory = retrieve_relevant_memory(embedding, self.collection)
         return " ".join(str(item) for item in relevant_memory if item is not None)
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, max=10), retry=retry_if_exception_type(Exception))
-    def _generate_final_response(self, user_input: str, initial_response: str, lobe_responses: Dict[str, Any], memory_context: str, sentiment: Dict[str, float]) -> str:
+    def _generate_final_response(self, user_input: str, initial_response: str, lobe_responses: Dict[str, Any], memory_context: str, sentiment: Dict[str, float], session_id: str) -> str:
         self._log_progress("Generating final response...")
         context = self._construct_final_prompt(user_input, initial_response, lobe_responses, memory_context, sentiment)
         system_message = self._construct_system_message()
@@ -100,8 +106,8 @@ class Brain:
         if not final_response or len(final_response.strip()) == 0:
             raise ValueError("Empty final response received from LLM")
         self.last_response = final_response
-        self.chat_history.append({"role": "user", "content": user_input})
-        self.chat_history.append({"role": "assistant", "content": final_response})
+        self._update_chat_history(session_id, {"role": "user", "content": user_input})
+        self._update_chat_history(session_id, {"role": "assistant", "content": final_response})
         return final_response
 
     def _construct_system_message(self) -> str:
@@ -109,21 +115,16 @@ class Brain:
 
     def _construct_initial_prompt(self, combined_input: str) -> str:
         return f"""
-        As AURORA, an advanced AI with multi-faceted cognitive capabilities, analyze the following context and user input to generate an initial response. Your goal is to provide a helpful, specific, and engaging response that addresses the user's needs.
+        Analyze the following context and user input to generate an initial response. Your goal is to provide a helpful, specific, and engaging response that addresses the user's needs.
 
         Input: "{combined_input}"
 
         Your task is to:
         1. Understand the request and its context.
-        2. If the request is clear and straightforward, provide a direct and helpful response.
-        3. If the request is complex or unclear:
-           a. Break it down into smaller, manageable parts.
-           b. Ask clarifying questions if necessary.
-           c. Provide initial thoughts or a high-level approach to addressing the request.
+        2. Provide a direct and helpful response if the request is clear.
+        3. If the request is unclear, break it down, ask clarifying questions, and provide initial thoughts or a high-level approach to addressing the request.
         4. Consider if any tools could be helpful in responding to the input.
-        5. If no tool is needed or if it's just a normal conversation reply normally.
-
-        Remember to be friendly, informative, and engaging in your response. Use your vast knowledge base to provide accurate and helpful information.
+        5. If no tool is needed, reply normally.
 
         Respond with your analysis and any tool calls you deem necessary.
         tool list: {json.dumps(tools, indent=2)}
@@ -133,7 +134,7 @@ class Brain:
 
     def _construct_final_prompt(self, user_input: str, initial_response: str, lobe_responses: Dict[str, Any], memory_context: str, sentiment: Dict[str, float]) -> str:
         return f"""
-        As AURORA, an advanced AI with multi-faceted cognitive capabilities, synthesize the following information to formulate a comprehensive response:
+        Synthesize the following information to formulate a comprehensive response:
 
         User Input: "{user_input}"
 
@@ -149,25 +150,18 @@ class Brain:
         Based on this information, generate a response that addresses the user's input comprehensively. Your response should:
 
         1. Directly address the user's main point or question
-        2. Incorporate relevant insights from the lobe processing results, including:
-           - The current integrated thought
-           - Recent thought histories from different lobes
-           - The overall thought process
+        2. Incorporate relevant insights from the lobe processing results
         3. Utilize any pertinent information from the memory context
         4. Adjust your tone based on the detected sentiment
-        5. If necessary, suggest or initiate the use of additional tools or processes to better assist the user
+        5. Suggest or initiate the use of additional tools if necessary
 
-        Remember to maintain a coherent narrative throughout your response, ensuring that all parts contribute to a unified and helpful answer. If you need to use any tools or perform additional actions, incorporate them naturally into your response.
+        Ensure that all parts contribute to a unified and helpful answer. Incorporate tools or actions naturally into your response.
 
         Example Structure:
-        1. Acknowledgment of the user's input and visual context
+        1. Acknowledge the user's input and context
         2. Main response addressing the core issue or question, incorporating lobe insights
-        3. Integration of memory context and overall thought process
+        3. Integration of memory context and thought process
         4. Conclusion or follow-up question to ensure user satisfaction
-        Be as friendly and conversationally concise and to the point but also informative as possible in your response.
-        Use emojis to make the response more engaging and human-like.
-        If it's a simple greeting or normal conversation, be as conversationally pleasing as possible as the user would expect.
-        You have many thoughts, but you can respond as an adult named Aurora.
 
         Your response:
         """
@@ -175,11 +169,23 @@ class Brain:
     def _log_progress(self, message: str):
         self.progress_callback(f"{message} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
+    def _update_chat_history(self, session_id: str, message: Dict[str, str]):
+        if session_id not in self.chat_histories:
+            self.chat_histories[session_id] = []
+        self.chat_histories[session_id].append(message)
+        # Keep only the last 10 messages
+        self.chat_histories[session_id] = self.chat_histories[session_id][-10:]
+
+    def get_chat_history(self, session_id: str):
+        return self.chat_histories.get(session_id, [])
+
     def get_detailed_info(self):
         try:
             detailed_info = {
-                "chat_history": self.chat_history,
-                "tts_enabled": self.tts_enabled
+                "tts_enabled": self.tts_enabled,
+                "embeddings_model": self.embeddings_model,
+                "collection_size": self.collection_size,
+                "last_response": self.last_response
             }
             return json.dumps(detailed_info, indent=2)
         except Exception as e:

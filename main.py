@@ -1,40 +1,40 @@
 import os
 import time
 import logging
-from flask import Flask, render_template, request, jsonify, g, send_file, Response
+from flask import Flask, render_template, request, jsonify, g, send_file, Response, session
+from flask_session import Session
 from Brain_modules.brain import Brain
 from listen_lobe import AuroraRecorder
 from speaker import text_to_speech
 from queue import Queue
 import json
 from Brain_modules.llm_api_calls import llm_api_calls, tools
-
-logging.basicConfig(level=logging.DEBUG)
+from Brain_modules.image_vision import ImageVision
+from utilities import setup_logging, setup_embedding_collection
+    
+# Set up logging
+setup_logging()
 
 app = Flask(__name__)
-app.config['PROPAGATE_EXCEPTIONS'] = True
+app.config['SECRET_KEY'] = os.urandom(24)
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = './flask_session/'
+Session(app)
 
 # Initialize components
 progress_queue = Queue()
-brain = Brain(progress_queue.put)
+collection, collection_size = setup_embedding_collection()
+brain = Brain(progress_queue.put, collection, collection_size)
 aurora_recorder = AuroraRecorder()
+image_vision = ImageVision()
 
 def update_progress(message):
-    """Update the progress queue with a new message in chat for updates."""
+    """Update the progress queue with a new message."""
     logging.debug(f"Progress update: {message}")
     progress_queue.put(message)
 
-def process_input(input_text):
-    """
-    Process the input text through the Brain module.
-
-    Args:
-        input_text (str): The input text to be processed.
-
-    Returns:
-        dict: The response and status of the processing.
-        str: The audio file if TTS is enabled, else None.
-    """
+def process_input(input_text, session_id):
+    """Process the input text through the Brain module."""
     if not input_text:
         update_progress("Error: No input provided.")
         return {'response': 'No input provided.', 'status': 'Error'}, None
@@ -42,7 +42,7 @@ def process_input(input_text):
     update_progress(f"Received input: {input_text}")
 
     try:
-        response = brain.process_input(input_text)
+        response = brain.process_input(input_text, session_id)
         update_progress("Response generated")
         audio_file = None
         if brain.tts_enabled:
@@ -87,6 +87,8 @@ def send_message():
     """Handle sending a message."""
     data = request.json
     message = data.get('message')
+    session_id = session.get('session_id', str(time.time()))
+    session['session_id'] = session_id
     
     if not message:
         return jsonify({'response': 'No message provided.', 'status': 'Error'})
@@ -95,7 +97,7 @@ def send_message():
     while not progress_queue.empty():
         progress_queue.get()
     
-    response, audio_file = process_input(message)
+    response, audio_file = process_input(message, session_id)
     return jsonify({**response, 'audio_file': audio_file})
 
 @app.route('/toggle_tts', methods=['POST'])
@@ -129,7 +131,9 @@ def stop_recording():
         transcription = aurora_recorder.transcription
         update_progress(f"Transcription completed: {transcription}")
         
-        response, audio_file = process_input(transcription)
+        session_id = session.get('session_id', str(time.time()))
+        session['session_id'] = session_id
+        response, audio_file = process_input(transcription, session_id)
         
         return jsonify({**response, 'transcription': transcription, 'audio_file': audio_file})
     except Exception as e:
@@ -157,10 +161,14 @@ def progress_updates():
             yield f"data: {json.dumps({'message': message})}\n\n"
     return Response(generate(), mimetype='text/event-stream')
 
-@app.route('/chat_history.json')
+@app.route('/chat_history')
 def chat_history():
     """Return the chat history as a JSON response."""
-    return jsonify(brain.chat_history)
+    session_id = session.get('session_id')
+    if session_id:
+        history = brain.get_chat_history(session_id)
+        return jsonify(history)
+    return jsonify([])
 
 @app.route('/set_env', methods=['POST'])
 def set_env():
@@ -171,6 +179,20 @@ def set_env():
         os.environ[variable] = value
         return jsonify({'status': 'success', 'message': f'{variable} has been set'})
     return jsonify({'status': 'error', 'message': 'Invalid request. Both variable and value are required.'}), 400
+
+@app.route('/analyze_image', methods=['POST'])
+def analyze_image():
+    """Analyze an image using the image_vision module."""
+    data = request.json
+    image_url = data.get('image_url')
+    if not image_url:
+        return jsonify({'status': 'error', 'message': 'No image URL provided'}), 400
+    
+    try:
+        analysis = image_vision.analyze_image(image_url)
+        return jsonify({'status': 'success', 'analysis': analysis})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, threaded=True, debug=False, use_reloader=False)
