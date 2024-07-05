@@ -1,111 +1,60 @@
-HOSTED DEMOS COMING EVENTUALLY! Right now its a flask app.
-Models from ollama, download these before running:
-```
-ollama pull llama3:instruct
-ollama pull llava-llama3
-ollama pull mxbai-embed-large
-```
-install this requirements.txt as per usual shiz:
-```
-pip install -r requirements.txt 
-```
-it should be as simple as running:
-```
-python main.py
-```
+# Aurora: AI Unified Responsive Optimized Reasoning Agent
 
-and then going to the url output in your terminal.
+## What is Aurora?
 
-ollama is the default, but you can change to groq or openai if you have the credentials set as env variables
-```
-OPENAI_API_KEY=(OPTIONAL)
-GROQ_API_KEY=(OPTIONAL)
-DEEPGRAM_API_KEY=(OPTIONAL FOR TTS)
-```
-
-This script aims to develop a deep lobe connection to an LLM, end goal is to make it autonomously do tasks until it thinks it cant do anything else then reply to you. The web research feature and its lobes with vision is its strengths in my personal opinion.
-each lobe will become its own model trained  to help AURORA specifically.
-Thanks for the support in any form!
-BELOW THIS LINE IS STILL OUTDATED SORTA:
-##############################################################3
-# AURORA (Artificial Unified Responsive Optimized Reasoning Agent) - AI Chatbot with Brain-like lobe Functions
-
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/Drlordbasil/AURORA)](https://github.com/Drlordbasil/AURORA/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/Drlordbasil/AURORA)](https://github.com/Drlordbasil/AURORA/network)
-[![Issues](https://img.shields.io/github/issues/Drlordbasil/AURORA)](https://github.com/Drlordbasil/AURORA/issues)
-[![Contributors](https://img.shields.io/github/contributors/Drlordbasil/AURORA)](https://github.com/Drlordbasil/AURORA/graphs/contributors)
-
-## Overview
-
-![image](https://github.com/Drlordbasil/AURORA/assets/126736516/54e72cb3-68a4-4142-8d2a-989aae0333b4)
-
-
-
-
-![image](https://github.com/Drlordbasil/AURORA/assets/126736516/d3e851c2-ebbc-4f27-86cf-93e67d060e66)
-
-**AURORA** is a smart AI chatbot that mimics the brain's different functions to provide insightful and context-aware interactions. It's perfect for research, coding help, sentiment analysis, and more!
+Aurora is an advanced AI assistant designed to provide helpful, insightful, and engaging responses to a wide range of queries and tasks. Think of Aurora as a highly intelligent digital companion that can assist you with various information needs and problem-solving challenges.
 
 ## Key Features
 
-- **Brain-like Architecture**: Specialized modules (lobes) for various tasks.
-- **Real-time Info**: Uses multiple search engines for up-to-date answers.
-- **Sentiment Analysis**: Understands the emotional tone of your inputs.
-- **Continuous Learning**: Learns and improves from interactions.
-![image](https://github.com/Drlordbasil/AURORA/assets/126736516/cb37aca1-a29e-4f1a-a200-1cab5ba981ac)
+1. **Comprehensive Understanding**: Aurora carefully analyzes your questions and requests to provide thorough and relevant responses.
 
-## Quick Start
+2. **Multi-faceted Processing**: Like a human brain, Aurora has different "lobes" that process information in unique ways, allowing for a more nuanced understanding of complex topics.
 
-### Prerequisites
+3. **Memory Integration**: Aurora can recall relevant information from past interactions, allowing for more contextual and personalized responses over time.
 
-- Python 3.12+
-- Git
+4. **Emotional Intelligence**: Aurora can detect the sentiment in your messages and adjust its tone accordingly, making interactions more natural and empathetic.
 
-### Installation
+5. **Tool Usage**: When needed, Aurora can use various digital tools to gather additional information or perform specific tasks to better assist you.
 
-1. **Clone the repo**:
-    ```bash
-    git clone https://github.com/Drlordbasil/AURORA.git
-    cd AURORA
-    ```
+6. **Continuous Learning**: With each interaction, Aurora aims to improve its capabilities and understanding.
 
-2. **Set up a virtual environment**:
-    ```bash
-    python -m venv env
-    source env/bin/activate  # On Windows use `env\Scripts\activate`
-    ```
+7. **Text-to-Speech**: Aurora can convert its text responses to speech, making it accessible for audio playback.
 
-3. **Install dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+## How Does Aurora Work?
 
-### Run AURORA
+1. **Input Analysis**: When you send a message, Aurora carefully examines your input to understand your needs and the context of your request.
 
-```bash
-python main.py
-```
+2. **Information Processing**: Aurora then processes your request through its various "lobes," each specializing in different types of analysis (like language understanding, logical reasoning, etc.).
 
-### Example Usage
+3. **Memory Retrieval**: Aurora checks its memory for any relevant past interactions or learned information that might be helpful.
 
-```python
-from brain import Brain
+4. **Tool Utilization**: If necessary, Aurora will use appropriate tools to gather more information or perform specific tasks related to your request.
 
-brain = Brain()
-response = brain.process_input("Tell me about the latest in AI.", print)
-print(response)
-```
+5. **Response Formulation**: Taking all this information into account, Aurora crafts a comprehensive response, ensuring it addresses all aspects of your query.
 
-## Contributing
+6. **Continuous Improvement**: After each interaction, Aurora reflects on its performance to find ways to improve future responses.
 
-I welcome contributions! Feel free to fork the project, create a new branch, and submit a pull request.
+## What Can You Ask Aurora?
 
-## License
+Aurora is versatile and can assist with a wide range of topics and tasks, including but not limited to:
 
-MIT License. See the [LICENSE](LICENSE) file for more details.
+- General knowledge questions
+- Research assistance
+- Problem-solving and brainstorming
+- Writing and editing help
+- Basic coding and technical queries
+- Task planning and organization
+- Simple calculations and data analysis
+- Creative writing prompts and ideas
 
-## Contact
+Remember, while Aurora is highly capable, it's an AI assistant and not a human. It doesn't have personal experiences or emotions, and its knowledge is based on its training data and available tools.
 
-Questions? Reach out to Anthony Snider at [drlordbasil@gmail.com](mailto:drlordbasil@gmail.com).
+## Getting Started
 
+To interact with Aurora, simply type your question or request in the chat interface. Be as clear and specific as possible to help Aurora understand your needs better. Don't hesitate to ask for clarification or provide feedback – this helps Aurora learn and improve!
+
+## A Note on Privacy and Ethics
+
+Aurora is designed with respect for user privacy and ethical considerations. It doesn't store personal information and aims to provide helpful information without bias. However, always use caution when sharing sensitive information with any AI system.
+
+Enjoy your interactions with Aurora, your AI assistant for insightful and engaging conversations!

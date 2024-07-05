@@ -141,19 +141,24 @@ class LLM_API_Calls:
         messages.extend(self.chat_history[-3:])
         messages.append({"role": "user", "content": prompt if len(prompt) < 1000 else prompt[:1000] + "truncated remaining..."})
 
-        while True:
-            response = self._chat_with_retry(messages, tools, progress_callback)
+        response = self._chat_with_retry(messages, tools, progress_callback)
+        
+        content = response.get("content", "")
+        tool_calls = response.get("tool_calls", [])
+
+        if tool_calls:
+            tool_responses = self._process_tool_calls(tool_calls, progress_callback)
+            messages.append({"role": "assistant", "content": content})
+            messages.append({"role": "function", "name": "tool_response", "content": json.dumps(tool_responses)})
             
-            if response.get("tool_calls"):
-                tool_responses = self._process_tool_calls(response["tool_calls"], progress_callback)
-                messages.append({"role": "assistant", "content": response.get("content", "")})
-                messages.append({"role": "function", "name": "tool_response", "content": json.dumps(tool_responses)})
-                
-                reflection_prompt = self._generate_reflection_prompt(prompt, response.get("content", ""), tool_responses)
-                messages.append({"role": "user", "content": reflection_prompt})
-            else:
-                self.chat_history.extend(messages[1:])  # Add all new messages except the system message
-                return response["content"], response.get("tool_calls", [])
+            reflection_prompt = self._generate_reflection_prompt(prompt, content, tool_responses)
+            messages.append({"role": "user", "content": reflection_prompt})
+            
+            final_response = self._chat_with_retry(messages, tools, progress_callback)
+            content = final_response.get("content", "")
+
+        self.chat_history.extend(messages[1:])  # Add all new messages except the system message
+        return content, tool_calls
 
     @retry(wait=wait_random_exponential(multiplier=1, max=40), stop=stop_after_attempt(MAX_RETRIES))
     def _chat_with_retry(self, messages: List[Dict[str, str]], tools: List[dict], progress_callback: Callable[[str], None] = None) -> Dict[str, Any]:
