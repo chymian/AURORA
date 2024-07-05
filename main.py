@@ -10,10 +10,9 @@ from queue import Queue
 import json
 from Brain_modules.llm_api_calls import llm_api_calls, tools
 from Brain_modules.image_vision import ImageVision
-from utilities import setup_logging, setup_embedding_collection
-    
-# Set up logging
-setup_logging()
+from Brain_modules.memory_utils import setup_embedding_collection, setup_logging
+
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)

@@ -7,7 +7,7 @@ import threading
 class AuroraRecorder:
     def __init__(self):
         """Initialize the AuroraRecorder with default settings."""
-        self.client = Groq()
+        self.client = Groq() if os.getenv("GROQ_API_KEY") else None
         self.recording = False
         self.audio_path = "output.wav"
         self.transcription = None
@@ -65,3 +65,4 @@ class AuroraRecorder:
         
         self.transcription = response.text
         print(f"Transcription: {self.transcription}")
+

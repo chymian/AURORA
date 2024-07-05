@@ -3,7 +3,7 @@ import os
 
 def text_to_speech(text):
     if os.environ.get("DEEPGRAM_API_KEY") is None:
-        print("Please set the DEEPGRAM_API_KEY environment variable.")
+        print("Please set the DEEPGRAM_API_KEY environment variable to enable text to speech.")
         return
     else:
         DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY")

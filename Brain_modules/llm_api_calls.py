@@ -2,7 +2,6 @@ import json
 import os
 import subprocess
 import time
-import requests
 from datetime import datetime
 from openai import OpenAI
 import tiktoken
@@ -12,11 +11,11 @@ from tenacity import retry, wait_random_exponential, stop_after_attempt, RetryEr
 from Brain_modules.image_vision import ImageVision
 from Brain_modules.tool_call_functions.web_research import WebResearchTool
 from Brain_modules.tool_call_functions.call_expert import call_expert
+from Brain_modules.tool_call_functions.file_directory_manager import file_directory_manager
 from Brain_modules.define_tools import tools
 
 MAX_TOKENS_PER_MINUTE = 5500
 MAX_RETRIES = 3
-BACKOFF_FACTOR = 2
 
 def get_current_datetime():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -38,7 +37,8 @@ class LLM_API_Calls:
             "run_local_command": self.run_local_command,
             "web_research": self.web_research_tool.web_research,
             "analyze_image": self.analyze_image,
-            "call_expert": call_expert
+            "call_expert": call_expert,
+            "file_directory_manager": file_directory_manager
         }
         self.rate_limit_remaining = MAX_TOKENS_PER_MINUTE
         self.rate_limit_reset = time.time() + 60
@@ -136,10 +136,18 @@ class LLM_API_Calls:
                 progress_callback(error_message)
             return error_message, []
 
+    def _construct_system_message(self) -> str:
+        return """You are an AI assistant designed to provide helpful and informative responses. 
+        Always respond in natural language, avoiding JSON or any other structured format in your final responses. 
+        If you use any tools or perform any actions, incorporate the results into your response naturally. 
+        Ensure your final response is a coherent paragraph or set of paragraphs that directly addresses the user's query or request."""
+
     def _chat_loop(self, prompt: str, system_message: str, tools: List[dict], progress_callback: Callable[[str], None] = None) -> Tuple[str, List[Any]]:
-        messages = [{"role": "system", "content": system_message}]
+        messages = [{"role": "system", "content": self._construct_system_message()}]
         messages.extend(self.chat_history[-3:])
-        messages.append({"role": "user", "content": prompt if len(prompt) < 1000 else prompt[:1000] + "truncated remaining..."})
+        
+        user_prompt = f"{prompt}\n\nRemember to respond in natural language, not in JSON or any other structured format."
+        messages.append({"role": "user", "content": user_prompt if len(user_prompt) < 1000 else user_prompt[:1000] + "... (truncated)"})
 
         response = self._chat_with_retry(messages, tools, progress_callback)
         
@@ -236,6 +244,7 @@ class LLM_API_Calls:
         to answer the user's query, provide a final response. If not, you may use additional tools or 
         ask for clarification.
 
+        Remember to respond in natural language, not in JSON or any other structured format.
         Your reflection and response:
         """
         return self.truncate_text(reflection_prompt, self.max_tokens)

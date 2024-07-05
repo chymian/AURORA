@@ -73,4 +73,42 @@ tools = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "file_directory_manager",
+            "description": "Perform file and directory operations on the local system.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list_directory", "create_directory", "delete_item", "move_item", "copy_item", "read_file", "write_file", "search_files", "get_file_info"],
+                        "description": "The action to perform on files or directories.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "The path to the file or directory.",
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "The source path for move or copy operations.",
+                    },
+                    "destination": {
+                        "type": "string",
+                        "description": "The destination path for move or copy operations.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The content to write to a file.",
+                    },
+                    "pattern": {
+                        "type": "string",
+                        "description": "The search pattern for finding files.",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]

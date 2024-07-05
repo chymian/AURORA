@@ -9,12 +9,12 @@ def call_expert(expertise, question, progress_callback=None):
     ]
     openai = OpenAI(base_url="http://localhost:11434/v1")
     response = openai.chat.completions.create(
-        model="llama3:instruct",
+        model="qwen:0.5b",
         messages=messages,
-        max_tokens=1000,
+        max_tokens=2000,
     )
     response_text = response.choices[0].message.content
     print(response_text)
     return response_text
 
-# call_expert("math", "What is the integral of x^2?")
+
