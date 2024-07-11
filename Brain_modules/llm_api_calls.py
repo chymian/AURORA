@@ -69,7 +69,7 @@ class LLM_API_Calls:
 
     def setup_ollama_client(self):
         self.model = os.environ.get("OLLAMA_MODEL", "llama3:instruct")
-        return OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+        return OpenAI(base_url="http://10.11.1.18:11434/v1", api_key="ollama")
 
     def setup_groq_client(self):
         api_key = os.environ.get("GROQ_API_KEY")
